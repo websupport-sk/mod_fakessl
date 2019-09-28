@@ -16,6 +16,7 @@
 #define MODULE			"mod_fakessl"
 
 module AP_MODULE_DECLARE_DATA fakessl_module;
+APR_DECLARE_OPTIONAL_FN(int, ssl_is_https, (conn_rec *));
 
 static int fakessl_stuff(request_rec *r)
 {
@@ -23,7 +24,11 @@ static int fakessl_stuff(request_rec *r)
 
 	if (apr_table_get(r->headers_in, "X-Forwarded-Proto") && !strcmp("https", apr_table_get(r->headers_in, "X-Forwarded-Proto"))) {
 		apr_table_setn(env, "HTTPS", "on");
+		apr_table_set(r->connection->notes, "fakessl_https", "on");
+	} else {
+		apr_table_unset(r->connection->notes, "fakessl_https");
 	}
+
 	return DECLINED;
 }
 
@@ -44,11 +49,19 @@ static apr_port_t fakessl_hook_default_port(const request_rec *r)
 	return 0;  
 }
 
+static int ssl_is_https(conn_rec *c) {
+    return apr_table_get(c->notes, "fakessl_https") != NULL;
+}
+
 static void register_hooks (apr_pool_t * p)
 {
 	ap_hook_post_read_request(fakessl_stuff, NULL, NULL, APR_HOOK_FIRST);
 	ap_hook_http_scheme (fakessl_hook_http_scheme,   NULL,NULL, APR_HOOK_FIRST);
 	ap_hook_default_port  (fakessl_hook_default_port,  NULL,NULL, APR_HOOK_FIRST);
+
+    /* this will only work if mod_ssl is not loaded */
+    if (APR_RETRIEVE_OPTIONAL_FN(ssl_is_https) == NULL)
+        APR_REGISTER_OPTIONAL_FN(ssl_is_https);
 }
 
 module AP_MODULE_DECLARE_DATA fakessl_module = {
